@@ -34,15 +34,37 @@ def vnet_left(X, channel, res_num, activation='ReLU', pool=True, batch_norm=Fals
     
     pool_size = 2
 
-    X = encode_layer(X, channel, pool_size, pool, activation=activation, 
-                     batch_norm=batch_norm, name='{}_encode'.format(name))
-    
-    if pool is not False:
-        X = CONV_stack(X, channel, kernel_size=3, stack_num=1, dilation_rate=1, 
-                       activation=activation, batch_norm=batch_norm, name='{}_pre_conv'.format(name))
+    X = encode_layer(
+        X,
+        channel,
+        pool_size,
+        pool,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_encode',
+    )
 
-    X = Res_CONV_stack(X, X, channel, res_num=res_num, activation=activation, 
-                       batch_norm=batch_norm, name='{}_res_conv'.format(name))
+    if pool is not False:
+        X = CONV_stack(
+            X,
+            channel,
+            kernel_size=3,
+            stack_num=1,
+            dilation_rate=1,
+            activation=activation,
+            batch_norm=batch_norm,
+            name=f'{name}_pre_conv',
+        )
+
+    X = Res_CONV_stack(
+        X,
+        X,
+        channel,
+        res_num=res_num,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_res_conv',
+    )
     return X
 
 def vnet_right(X, X_list, channel, res_num, activation='ReLU', unpool=True, batch_norm=False, name='right'):
@@ -71,17 +93,31 @@ def vnet_right(X, X_list, channel, res_num, activation='ReLU', unpool=True, batc
     
     '''
     pool_size = 2
-    
-    X = decode_layer(X, channel, pool_size, unpool, 
-                     activation=activation, batch_norm=batch_norm, name='{}_decode'.format(name))
-    
+
+    X = decode_layer(
+        X,
+        channel,
+        pool_size,
+        unpool,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_decode',
+    )
+
     X_skip = X
-    
-    X = concatenate([X,]+X_list, axis=-1, name='{}_concat'.format(name))
-    
-    X = Res_CONV_stack(X, X_skip, channel, res_num, activation=activation, 
-                       batch_norm=batch_norm, name='{}_res_conv'.format(name))
-    
+
+    X = concatenate([X,]+X_list, axis=-1, name=f'{name}_concat')
+
+    X = Res_CONV_stack(
+        X,
+        X_skip,
+        channel,
+        res_num,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_res_conv',
+    )
+
     return X
 
 def vnet_2d_base(input_tensor, filter_num, res_num_ini=1, res_num_max=3, 
@@ -134,25 +170,43 @@ def vnet_2d_base(input_tensor, filter_num, res_num_ini=1, res_num_max=3,
     res_num_list = []
     for i in range(depth_):
         temp_num = res_num_ini + i
-        if temp_num > res_num_max:
-            temp_num = res_num_max
+        temp_num = min(temp_num, res_num_max)
         res_num_list.append(temp_num)
-
-    X_skip = []
 
     X = input_tensor
     # ini conv layer
-    X = CONV_stack(X, filter_num[0], kernel_size=3, stack_num=1, dilation_rate=1, 
-                   activation=activation, batch_norm=batch_norm, name='{}_input_conv'.format(name))
+    X = CONV_stack(
+        X,
+        filter_num[0],
+        kernel_size=3,
+        stack_num=1,
+        dilation_rate=1,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_input_conv',
+    )
 
-    X = Res_CONV_stack(X, X, filter_num[0], res_num=res_num_list[0], activation=activation, 
-                 batch_norm=batch_norm, name='{}_down_0'.format(name))
-    X_skip.append(X)
-
+    X = Res_CONV_stack(
+        X,
+        X,
+        filter_num[0],
+        res_num=res_num_list[0],
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_down_0',
+    )
+    X_skip = [X]
     # downsampling levels
     for i, f in enumerate(filter_num[1:]):
-        X = vnet_left(X, f, res_num=res_num_list[i+1], activation=activation, pool=pool, 
-                      batch_norm=batch_norm, name='{}_down_{}'.format(name, i+1))
+        X = vnet_left(
+            X,
+            f,
+            res_num=res_num_list[i + 1],
+            activation=activation,
+            pool=pool,
+            batch_norm=batch_norm,
+            name=f'{name}_down_{i + 1}',
+        )
 
         X_skip.append(X)
 
@@ -162,8 +216,18 @@ def vnet_2d_base(input_tensor, filter_num, res_num_ini=1, res_num_max=3,
 
     # upsampling levels
     for i, f in enumerate(filter_num):
-        X = vnet_right(X, [X_skip[i],], f, res_num=res_num_list[i], 
-                       activation=activation, unpool=unpool, batch_norm=batch_norm, name='{}_up_{}'.format(name, i))
+        X = vnet_right(
+            X,
+            [
+                X_skip[i],
+            ],
+            f,
+            res_num=res_num_list[i],
+            activation=activation,
+            unpool=unpool,
+            batch_norm=batch_norm,
+            name=f'{name}_up_{i}',
+        )
 
     return X
 
@@ -225,10 +289,13 @@ def vnet_2d(input_size, filter_num, n_labels,
     X = vnet_2d_base(X, filter_num, res_num_ini=res_num_ini, res_num_max= res_num_max, 
                      activation=activation, batch_norm=batch_norm, pool=pool, unpool=unpool, name=name)
     # output layer
-    OUT = CONV_output(X, n_labels, kernel_size=1, activation=output_activation, name='{}_output'.format(name))
-    
-    # functional API model
-    model = Model(inputs=[IN,], outputs=[OUT,], name='{}_model'.format(name))
-    
-    return model
+    OUT = CONV_output(
+        X,
+        n_labels,
+        kernel_size=1,
+        activation=output_activation,
+        name=f'{name}_output',
+    )
+
+    return Model(inputs=[IN,], outputs=[OUT,], name=f'{name}_model')
 

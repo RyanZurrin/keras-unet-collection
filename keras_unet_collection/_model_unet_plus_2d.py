@@ -81,16 +81,28 @@ def unet_plus_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2
         X = input_tensor
 
         # downsampling blocks (same as in 'unet_2d')
-        X = CONV_stack(X, filter_num[0], stack_num=stack_num_down, activation=activation, 
-                       batch_norm=batch_norm, name='{}_down0'.format(name))
+        X = CONV_stack(
+            X,
+            filter_num[0],
+            stack_num=stack_num_down,
+            activation=activation,
+            batch_norm=batch_norm,
+            name=f'{name}_down0',
+        )
         X_nest_skip[0].append(X)
         for i, f in enumerate(filter_num[1:]):
-            X = UNET_left(X, f, stack_num=stack_num_down, activation=activation, 
-                          pool=pool, batch_norm=batch_norm, name='{}_down{}'.format(name, i+1))        
+            X = UNET_left(
+                X,
+                f,
+                stack_num=stack_num_down,
+                activation=activation,
+                pool=pool,
+                batch_norm=batch_norm,
+                name=f'{name}_down{i + 1}',
+            )
             X_nest_skip[0].append(X)
 
-    # backbone cases
-    else:        
+    else:    
         # handling VGG16 and VGG19 separately
         if 'VGG' in backbone:
             backbone_ = backbone_zoo(backbone, weights, input_tensor, depth_, freeze_backbone, freeze_batch_norm)
@@ -116,8 +128,15 @@ def unet_plus_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2
             for i in range(depth_-depth_encode):
                 i_real = i + depth_encode
 
-                X = UNET_left(X, filter_num[i_real], stack_num=stack_num_down, activation=activation, pool=pool, 
-                              batch_norm=batch_norm, name='{}_down{}'.format(name, i_real+1))
+                X = UNET_left(
+                    X,
+                    filter_num[i_real],
+                    stack_num=stack_num_down,
+                    activation=activation,
+                    pool=pool,
+                    batch_norm=batch_norm,
+                    name=f'{name}_down{i_real + 1}',
+                )
                 X_nest_skip[0].append(X)
 
 
@@ -134,16 +153,24 @@ def unet_plus_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2
         # loop over individual upsamling levels
         for i in range(1, depth_decode):
 
-            # collecting previous downsampling outputs
-            previous_skip = []
-            for previous_lev in range(nest_lev):
-                previous_skip.append(X_nest_skip[previous_lev][i-1])
-
+            previous_skip = [
+                X_nest_skip[previous_lev][i - 1]
+                for previous_lev in range(nest_lev)
+            ]
             # upsamping block that concatenates all available (same feature map size) down-/upsampling outputs
             X_nest_skip[nest_lev].append(
-                UNET_right(X_nest_skip[nest_lev-1][i], previous_skip, filter_num[i-1], 
-                           stack_num=stack_num_up, activation=activation, unpool=unpool, 
-                           batch_norm=batch_norm, concat=False, name='{}_up{}_from{}'.format(name, nest_lev-1, i-1)))
+                UNET_right(
+                    X_nest_skip[nest_lev - 1][i],
+                    previous_skip,
+                    filter_num[i - 1],
+                    stack_num=stack_num_up,
+                    activation=activation,
+                    unpool=unpool,
+                    batch_norm=batch_norm,
+                    concat=False,
+                    name=f'{name}_up{nest_lev - 1}_from{i - 1}',
+                )
+            )
 
         if depth_decode < depth_lev+1:
 
@@ -151,21 +178,23 @@ def unet_plus_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2
 
             for j in range(depth_lev-depth_decode+1):
                 j_real = j + depth_decode
-                X = UNET_right(X, None, filter_num[j_real-1], 
-                               stack_num=stack_num_up, activation=activation, unpool=unpool, 
-                               batch_norm=batch_norm, concat=False, name='{}_up{}_from{}'.format(name, nest_lev-1, j_real-1))
+                X = UNET_right(
+                    X,
+                    None,
+                    filter_num[j_real - 1],
+                    stack_num=stack_num_up,
+                    activation=activation,
+                    unpool=unpool,
+                    batch_norm=batch_norm,
+                    concat=False,
+                    name=f'{name}_up{nest_lev - 1}_from{j_real - 1}',
+                )
                 X_nest_skip[nest_lev].append(X)
-            
+
     # output
     if deep_supervision:
         
-        X_list = []
-        
-        for i in range(depth_):
-            X_list.append(X_nest_skip[i][0])
-        
-        return X_list
-        
+        return [X_nest_skip[i][0] for i in range(depth_)]
     else:
         return X_nest_skip[-1][0]
 
@@ -228,68 +257,98 @@ def unet_plus_2d(input_size, filter_num, n_labels, stack_num_down=2, stack_num_u
     '''
     
     depth_ = len(filter_num)
-    
+
     if backbone is not None:
         bach_norm_checker(backbone, batch_norm)
-    
+
     IN = Input(input_size)
     # base
     X = unet_plus_2d_base(IN, filter_num, stack_num_down=stack_num_down, stack_num_up=stack_num_up,
                           activation=activation, batch_norm=batch_norm, pool=pool, unpool=unpool, deep_supervision=deep_supervision, 
                           backbone=backbone, weights=weights, freeze_backbone=freeze_backbone, freeze_batch_norm=freeze_batch_norm, name=name)
-    
+
     # output
     if deep_supervision:
         
         if (backbone is not None) and freeze_backbone:
             backbone_warn = '\n\nThe shallowest U-net++ deep supervision branch directly connects to a frozen backbone.\nTesting your configurations on `keras_unet_collection.base.unet_plus_2d_base` is recommended.'
             warnings.warn(backbone_warn);
-            
+
         # model base returns a list of tensors
         X_list = X
         OUT_list = []
-        
+
         print('----------\ndeep_supervision = True\nnames of output tensors are listed as follows ("sup0" is the shallowest supervision layer;\n"final" is the final output layer):\n')
-        
+
         # no backbone or VGG backbones
         # depth_ > 2 is expected (a least two downsampling blocks)
         if (backbone is None) or 'VGG' in backbone:
-        
+
             for i in range(0, depth_-1):
                 if output_activation is None:
-                    print('\t{}_output_sup{}'.format(name, i))
+                    print(f'\t{name}_output_sup{i}')
                 else:
-                    print('\t{}_output_sup{}_activation'.format(name, i))
-                    
-                OUT_list.append(CONV_output(X_list[i], n_labels, kernel_size=1, activation=output_activation, 
-                                            name='{}_output_sup{}'.format(name, i)))
-        # other backbones        
+                    print(f'\t{name}_output_sup{i}_activation')
+
+                OUT_list.append(
+                    CONV_output(
+                        X_list[i],
+                        n_labels,
+                        kernel_size=1,
+                        activation=output_activation,
+                        name=f'{name}_output_sup{i}',
+                    )
+                )
         else:
             for i in range(1, depth_-1):
                 if output_activation is None:
-                    print('\t{}_output_sup{}'.format(name, i-1))
+                    print(f'\t{name}_output_sup{i - 1}')
                 else:
-                    print('\t{}_output_sup{}_activation'.format(name, i-1))
-                
+                    print(f'\t{name}_output_sup{i - 1}_activation')
+
                 # an extra upsampling for creating full resolution feature maps
-                X = decode_layer(X_list[i], filter_num[i], 2, unpool, activation=activation, 
-                                 batch_norm=batch_norm, name='{}_sup{}_up'.format(name, i-1))
-                
-                X = CONV_output(X, n_labels, kernel_size=1, activation=output_activation, name='{}_output_sup{}'.format(name, i-1))
+                X = decode_layer(
+                    X_list[i],
+                    filter_num[i],
+                    2,
+                    unpool,
+                    activation=activation,
+                    batch_norm=batch_norm,
+                    name=f'{name}_sup{i - 1}_up',
+                )
+
+                X = CONV_output(
+                    X,
+                    n_labels,
+                    kernel_size=1,
+                    activation=output_activation,
+                    name=f'{name}_output_sup{i - 1}',
+                )
                 OUT_list.append(X)
-                
+
         if output_activation is None:
-            print('\t{}_output_final'.format(name))
+            print(f'\t{name}_output_final')
         else:
-            print('\t{}_output_final_activation'.format(name))
-            
-        OUT_list.append(CONV_output(X_list[-1], n_labels, kernel_size=1, activation=output_activation, name='{}_output_final'.format(name)))
-        
+            print(f'\t{name}_output_final_activation')
+
+        OUT_list.append(
+            CONV_output(
+                X_list[-1],
+                n_labels,
+                kernel_size=1,
+                activation=output_activation,
+                name=f'{name}_output_final',
+            )
+        )
+
     else:
-        OUT = CONV_output(X, n_labels, kernel_size=1, activation=output_activation, name='{}_output'.format(name))
+        OUT = CONV_output(
+            X,
+            n_labels,
+            kernel_size=1,
+            activation=output_activation,
+            name=f'{name}_output',
+        )
         OUT_list = [OUT,]
-        
-    # model
-    model = Model(inputs=[IN,], outputs=OUT_list, name='{}_model'.format(name))
-    
-    return model
+
+    return Model(inputs=[IN,], outputs=OUT_list, name=f'{name}_model')

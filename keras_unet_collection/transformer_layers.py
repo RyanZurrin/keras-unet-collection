@@ -113,8 +113,7 @@ class patch_embedding(Layer):
     
     def call(self, patch):
         pos = tf.range(start=0, limit=self.num_patch, delta=1)
-        embed = self.proj(patch) + self.pos_embed(pos)
-        return embed
+        return self.proj(patch) + self.pos_embed(pos)
 
 class patch_merging(tf.keras.layers.Layer):
     '''
@@ -133,12 +132,14 @@ class patch_merging(tf.keras.layers.Layer):
     '''
     def __init__(self, num_patch, embed_dim, name='', **kwargs):
         super(patch_merging, self).__init__(**kwargs)
-        
+
         self.num_patch = num_patch
         self.embed_dim = embed_dim
-        
-        # A linear transform that doubles the channels 
-        self.linear_trans = Dense(2*embed_dim, use_bias=False, name='{}_linear_trans'.format(name))
+
+        # A linear transform that doubles the channels
+        self.linear_trans = Dense(
+            2 * embed_dim, use_bias=False, name=f'{name}_linear_trans'
+        )
 
     def get_config(self):
         config = super().get_config().copy()
@@ -157,23 +158,25 @@ class patch_merging(tf.keras.layers.Layer):
         
         H, W = self.num_patch
         B, L, C = x.get_shape().as_list()
-        
+
         assert (L == H * W), 'input feature has wrong size'
-        assert (H % 2 == 0 and W % 2 == 0), '{}-by-{} patches received, they are not even.'.format(H, W)
-        
+        assert (
+            H % 2 == 0 and W % 2 == 0
+        ), f'{H}-by-{W} patches received, they are not even.'
+
         # Convert the patch sequence to aligned patches
         x = tf.reshape(x, shape=(-1, H, W, C))
-        
+
         # Downsample
         x0 = x[:, 0::2, 0::2, :]  # B H/2 W/2 C
         x1 = x[:, 1::2, 0::2, :]  # B H/2 W/2 C
         x2 = x[:, 0::2, 1::2, :]  # B H/2 W/2 C
         x3 = x[:, 1::2, 1::2, :]  # B H/2 W/2 C
         x = tf.concat((x0, x1, x2, x3), axis=-1)
-        
+
         # Convert to the patch squence
         x = tf.reshape(x, shape=(-1, (H//2)*(W//2), 4*C))
-       
+
         # Linear transform
         x = self.linear_trans(x)
 
@@ -198,16 +201,26 @@ class patch_expanding(tf.keras.layers.Layer):
 
     def __init__(self, num_patch, embed_dim, upsample_rate, return_vector=True, name='patch_expand', **kwargs):
         super(patch_expanding, self).__init__(**kwargs)
-        
+
         self.num_patch = num_patch
         self.embed_dim = embed_dim
         self.upsample_rate = upsample_rate
         self.return_vector = return_vector
-        
-        # Linear transformations that doubles the channels 
-        self.linear_trans1 = Conv2D(upsample_rate*embed_dim, kernel_size=1, use_bias=False, name='{}_linear_trans1'.format(name))
-        # 
-        self.linear_trans2 = Conv2D(upsample_rate*embed_dim, kernel_size=1, use_bias=False, name='{}_linear_trans1'.format(name))
+
+        # Linear transformations that doubles the channels
+        self.linear_trans1 = Conv2D(
+            upsample_rate * embed_dim,
+            kernel_size=1,
+            use_bias=False,
+            name=f'{name}_linear_trans1',
+        )
+        #
+        self.linear_trans2 = Conv2D(
+            upsample_rate * embed_dim,
+            kernel_size=1,
+            use_bias=False,
+            name=f'{name}_linear_trans1',
+        )
         self.prefix = name
         
     def get_config(self):
@@ -229,16 +242,21 @@ class patch_expanding(tf.keras.layers.Layer):
         
         H, W = self.num_patch
         B, L, C = x.get_shape().as_list()
-        
+
         assert (L == H * W), 'input feature has wrong size'
 
         x = tf.reshape(x, (-1, H, W, C))
-        
+
         x = self.linear_trans1(x)
-        
+
         # rearange depth to number of patches
-        x = depth_to_space(x, self.upsample_rate, data_format='NHWC', name='{}_d_to_space'.format(self.prefix))
-        
+        x = depth_to_space(
+            x,
+            self.upsample_rate,
+            data_format='NHWC',
+            name=f'{self.prefix}_d_to_space',
+        )
+
         if self.return_vector:
             # Convert aligned patches to a patch sequence
             x = tf.reshape(x, (-1, L*self.upsample_rate*self.upsample_rate, C//2))
@@ -253,17 +271,14 @@ def window_partition(x, window_size):
     # Get the static shape of the input tensor
     # (Sample, Height, Width, Channel)
     _, H, W, C = x.get_shape().as_list()
-    
+
     # Subset tensors to patches
     patch_num_H = H//window_size
     patch_num_W = W//window_size
     x = tf.reshape(x, shape=(-1, patch_num_H, window_size, patch_num_W, window_size, C))
     x = tf.transpose(x, (0, 1, 3, 2, 4, 5))
-    
-    # Reshape patches to a patch sequence
-    windows = tf.reshape(x, shape=(-1, window_size, window_size, C))
-    
-    return windows
+
+    return tf.reshape(x, shape=(-1, window_size, window_size, C))
 
 def window_reverse(windows, window_size, H, W, C):
     
@@ -289,13 +304,13 @@ def drop_path_(inputs, drop_prob, is_training):
 
     # Compute drop_connect tensor
     input_shape = tf.shape(inputs)
-    batch_num = input_shape[0]; rank = len(input_shape)
-    
+    batch_num = input_shape[0]
+    rank = len(input_shape)
+
     shape = (batch_num,) + (1,) * (rank - 1)
     random_tensor = keep_prob + tf.random.uniform(shape, dtype=inputs.dtype)
     path_mask = tf.floor(random_tensor)
-    output = tf.math.divide(inputs, keep_prob) * path_mask
-    return output
+    return tf.math.divide(inputs, keep_prob) * path_mask
 
 class drop_path(Layer):
     def __init__(self, drop_prob=None, **kwargs):
@@ -318,17 +333,17 @@ class Mlp(tf.keras.layers.Layer):
     def __init__(self, filter_num, drop=0., name='mlp', **kwargs):
         
         super(Mlp, self).__init__(**kwargs)
-        
+
         self.filter_num = filter_num
         self.drop = drop
-        
+
         # MLP layers
-        self.fc1 = Dense(filter_num[0], name='{}_mlp_0'.format(name))
-        self.fc2 = Dense(filter_num[1], name='{}_mlp_1'.format(name))
-        
+        self.fc1 = Dense(filter_num[0], name=f'{name}_mlp_0')
+        self.fc2 = Dense(filter_num[1], name=f'{name}_mlp_1')
+
         # Dropout layer
         self.drop = Dropout(drop)
-        
+
         # GELU activation
         self.activation = tf.keras.activations.gelu
         
@@ -360,7 +375,7 @@ class WindowAttention(tf.keras.layers.Layer):
     def __init__(self, dim, window_size, num_heads, qkv_bias=True, qk_scale=None, 
                  attn_drop=0, proj_drop=0., name='swin_atten', **kwargs):
         super(WindowAttention, self).__init__(**kwargs)
-        
+
         self.dim = dim # number of input dimensions
         self.window_size = window_size # size of the attention window
         self.num_heads = num_heads # number of self-attention heads
@@ -368,16 +383,16 @@ class WindowAttention(tf.keras.layers.Layer):
         self.qk_scale = qk_scale
         self.attn_drop = attn_drop
         self.proj_drop = proj_drop
-        
+
         head_dim = dim // num_heads
         self.scale = qk_scale or head_dim ** -0.5 # query scaling factor
-        
+
         self.prefix = name
-        
+
         # Layers
-        self.qkv = Dense(dim * 3, use_bias=qkv_bias, name='{}_attn_qkv'.format(self.prefix))
+        self.qkv = Dense(dim * 3, use_bias=qkv_bias, name=f'{self.prefix}_attn_qkv')
         self.attn_drop = Dropout(attn_drop)
-        self.proj = Dense(dim, name='{}_attn_proj'.format(self.prefix))
+        self.proj = Dense(dim, name=f'{self.prefix}_attn_proj')
         self.proj_drop = Dropout(proj_drop)
 
     def get_config(self):
@@ -402,10 +417,13 @@ class WindowAttention(tf.keras.layers.Layer):
         
         # zero initialization
         num_window_elements = (2*self.window_size[0] - 1) * (2*self.window_size[1] - 1)
-        self.relative_position_bias_table = self.add_weight('{}_attn_pos'.format(self.prefix),
-                                                            shape=(num_window_elements, self.num_heads),
-                                                            initializer=tf.initializers.Zeros(), trainable=True)
-        
+        self.relative_position_bias_table = self.add_weight(
+            f'{self.prefix}_attn_pos',
+            shape=(num_window_elements, self.num_heads),
+            initializer=tf.initializers.Zeros(),
+            trainable=True,
+        )
+
         # Indices of relative positions
         coords_h = np.arange(self.window_size[0])
         coords_w = np.arange(self.window_size[1])
@@ -418,11 +436,14 @@ class WindowAttention(tf.keras.layers.Layer):
         relative_coords[:, :, 1] += self.window_size[1] - 1
         relative_coords[:, :, 0] *= 2 * self.window_size[1] - 1
         relative_position_index = relative_coords.sum(-1)
-        
+
         # convert to the tf variable
         self.relative_position_index = tf.Variable(
-            initial_value=tf.convert_to_tensor(relative_position_index), trainable=False, name='{}_attn_pos_ind'.format(self.prefix))
-        
+            initial_value=tf.convert_to_tensor(relative_position_index),
+            trainable=False,
+            name=f'{self.prefix}_attn_pos_ind',
+        )
+
         self.built = True
 
     def call(self, x, mask=None):
@@ -430,19 +451,19 @@ class WindowAttention(tf.keras.layers.Layer):
         # Get input tensor static shape
         _, N, C = x.get_shape().as_list()
         head_dim = C//self.num_heads
-        
+
         x_qkv = self.qkv(x)
         x_qkv = tf.reshape(x_qkv, shape=(-1, N, 3, self.num_heads, head_dim))
         x_qkv = tf.transpose(x_qkv, perm=(2, 0, 3, 1, 4))
         q, k, v = x_qkv[0], x_qkv[1], x_qkv[2]
-        
+
         # Query rescaling
         q = q * self.scale
-        
+
         # multi-headed self-attention
         k = tf.transpose(k, perm=(0, 1, 3, 2))
         attn = (q @ k)
-        
+
         # Shift window
         num_window_elements = self.window_size[0] * self.window_size[1]
         relative_position_index_flat = tf.reshape(self.relative_position_index, shape=(-1,))
@@ -456,24 +477,21 @@ class WindowAttention(tf.keras.layers.Layer):
             mask_float = tf.cast(tf.expand_dims(tf.expand_dims(mask, axis=1), axis=0), tf.float32)
             attn = tf.reshape(attn, shape=(-1, nW, self.num_heads, N, N)) + mask_float
             attn = tf.reshape(attn, shape=(-1, self.num_heads, N, N))
-            attn = softmax(attn, axis=-1)
-        else:
-            attn = softmax(attn, axis=-1)
-        
+        attn = softmax(attn, axis=-1)
         # Dropout after attention
         attn = self.attn_drop(attn)
-        
+
         # Merge qkv vectors
         x_qkv = (attn @ v)
         x_qkv = tf.transpose(x_qkv, perm=(0, 2, 1, 3))
         x_qkv = tf.reshape(x_qkv, shape=(-1, N, C))
-        
+
         # Linear projection
         x_qkv = self.proj(x_qkv)
-        
+
         # Dropout after projection
         x_qkv = self.proj_drop(x_qkv)
-        
+
         return x_qkv
 
 class SwinTransformerBlock(tf.keras.layers.Layer):
@@ -482,7 +500,7 @@ class SwinTransformerBlock(tf.keras.layers.Layer):
                  proj_drop=0, drop_path_prob=0, name='swin_block', **kwargs):
         
         super(SwinTransformerBlock, self).__init__(**kwargs)
-        
+
         self.dim = dim # number of input dimensions
         self.num_patch = num_patch # number of embedded patches; a tuple of  (heigh, width)
         self.num_heads = num_heads # number of attention heads
@@ -495,21 +513,21 @@ class SwinTransformerBlock(tf.keras.layers.Layer):
         self.attn_drop = attn_drop
         self.proj_drop = proj_drop
         self.drop_path_prob = drop_path_prob
-        
+
         self.prefix = name
-        
+
         # Layers
-        self.norm1 = LayerNormalization(epsilon=1e-5, name='{}_norm1'.format(self.prefix))
+        self.norm1 = LayerNormalization(epsilon=1e-5, name=f'{self.prefix}_norm1')
         self.attn = WindowAttention(dim, window_size=(self.window_size, self.window_size), num_heads=num_heads,
                                     qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=proj_drop, name=self.prefix)
         self.drop_path = drop_path(drop_path_prob)
-        self.norm2 = LayerNormalization(epsilon=1e-5, name='{}_norm2'.format(self.prefix))
+        self.norm2 = LayerNormalization(epsilon=1e-5, name=f'{self.prefix}_norm2')
         self.mlp = Mlp([num_mlp, dim], drop=mlp_drop, name=self.prefix)
-        
+
         # Assertions
         assert 0 <= self.shift_size, 'shift_size >= 0 is required'
         assert self.shift_size < self.window_size, 'shift_size < window_size is required'
-        
+
         # <---!!!
         # Handling too-small patch numbers
         if min(self.num_patch) < self.window_size:
@@ -544,10 +562,10 @@ class SwinTransformerBlock(tf.keras.layers.Layer):
             H, W = self.num_patch
             h_slices = (slice(0, -self.window_size), slice(-self.window_size, -self.shift_size), slice(-self.shift_size, None))
             w_slices = (slice(0, -self.window_size), slice(-self.window_size, -self.shift_size), slice(-self.shift_size, None))
-            
+
             # attention mask
             mask_array = np.zeros((1, H, W, 1))
-            
+
             ## initialization
             count = 0
             for h in h_slices:
@@ -555,14 +573,18 @@ class SwinTransformerBlock(tf.keras.layers.Layer):
                     mask_array[:, h, w, :] = count
                     count += 1
             mask_array = tf.convert_to_tensor(mask_array)
-            
+
             # mask array to windows
             mask_windows = window_partition(mask_array, self.window_size)
             mask_windows = tf.reshape(mask_windows, shape=[-1, self.window_size * self.window_size])
             attn_mask = tf.expand_dims(mask_windows, axis=1) - tf.expand_dims(mask_windows, axis=2)
             attn_mask = tf.where(attn_mask != 0, -100.0, attn_mask)
             attn_mask = tf.where(attn_mask == 0, 0.0, attn_mask)
-            self.attn_mask = tf.Variable(initial_value=attn_mask, trainable=False, name='{}_attn_mask'.format(self.prefix))
+            self.attn_mask = tf.Variable(
+                initial_value=attn_mask,
+                trainable=False,
+                name=f'{self.prefix}_attn_mask',
+            )
         else:
             self.attn_mask = None
 

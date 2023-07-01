@@ -20,8 +20,7 @@ def dummy_loader(model_path):
         
     '''
     backbone = keras.models.load_model(model_path, compile=False)
-    W = backbone.get_weights()
-    return W
+    return backbone.get_weights()
 
 def image_to_array(filenames, size, channel):
     '''
@@ -89,12 +88,9 @@ def freeze_model(model, freeze_batch_norm=False):
         for layer in model.layers:
             layer.trainable = False
     else:
-        from tensorflow.keras.layers import BatchNormalization    
+        from tensorflow.keras.layers import BatchNormalization
         for layer in model.layers:
-            if isinstance(layer, BatchNormalization):
-                layer.trainable = True
-            else:
-                layer.trainable = False
+            layer.trainable = isinstance(layer, BatchNormalization)
     return model
 
 

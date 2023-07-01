@@ -34,18 +34,20 @@ def ResUNET_a_block(X, channel, kernel_size=3, dilation_num=1.0, activation='ReL
     
     '''
     
-    X_res = []
-    
-    for i, d in enumerate(dilation_num):
-        
-        X_res.append(CONV_stack(X, channel, kernel_size=kernel_size, stack_num=2, dilation_rate=d, 
-                                activation=activation, batch_norm=batch_norm, name='{}_stack{}'.format(name, i)))
-        
-    if len(X_res) > 1:
-        return add(X_res)
-    
-    else:
-        return X_res[0]
+    X_res = [
+        CONV_stack(
+            X,
+            channel,
+            kernel_size=kernel_size,
+            stack_num=2,
+            dilation_rate=d,
+            activation=activation,
+            batch_norm=batch_norm,
+            name=f'{name}_stack{i}',
+        )
+        for i, d in enumerate(dilation_num)
+    ]
+    return add(X_res) if len(X_res) > 1 else X_res[0]
 
 
 def ResUNET_a_right(X, X_list, channel, kernel_size=3, dilation_num=[1,], 
@@ -79,17 +81,31 @@ def ResUNET_a_right(X, X_list, channel, kernel_size=3, dilation_num=[1,],
     '''
     
     pool_size = 2
-    
-    X = decode_layer(X, channel, pool_size, unpool, 
-                     activation=activation, batch_norm=batch_norm, name='{}_decode'.format(name))
-        
+
+    X = decode_layer(
+        X,
+        channel,
+        pool_size,
+        unpool,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_decode',
+    )
+
     # <--- *stacked convolutional can be applied here
-    X = concatenate([X,]+X_list, axis=3, name=name+'_concat')
-    
-    # Stacked convolutions after concatenation 
-    X = ResUNET_a_block(X, channel, kernel_size=kernel_size, dilation_num=dilation_num, activation=activation, 
-                        batch_norm=batch_norm, name='{}_resblock'.format(name))
-     
+    X = concatenate([X,]+X_list, axis=3, name=f'{name}_concat')
+
+    # Stacked convolutions after concatenation
+    X = ResUNET_a_block(
+        X,
+        channel,
+        kernel_size=kernel_size,
+        dilation_num=dilation_num,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_resblock',
+    )
+
     return X
 
 def resunet_a_2d_base(input_tensor, filter_num, dilation_num,
@@ -138,12 +154,10 @@ def resunet_a_2d_base(input_tensor, filter_num, dilation_num,
     '''
     
     pool_size = 2
-    
+
     activation_func = eval(activation)
-    
+
     depth_ = len(filter_num)
-    X_skip = []
-    
     # ----- #
     # rejecting auto-mode from this base function
     if isinstance(dilation_num[0], int):
@@ -151,43 +165,94 @@ def resunet_a_2d_base(input_tensor, filter_num, dilation_num,
     else:
         dilation_ = dilation_num
     # ----- #
-    
+
     X = input_tensor
-    
+
     # input mapping with 1-by-1 conv
-    X = Conv2D(filter_num[0], 1, 1, dilation_rate=1, padding='same', 
-               use_bias=True, name='{}_input_mapping'.format(name))(X)
-    X = activation_func(name='{}_input_activation'.format(name))(X)
-    X_skip.append(X)
+    X = Conv2D(
+        filter_num[0],
+        1,
+        1,
+        dilation_rate=1,
+        padding='same',
+        use_bias=True,
+        name=f'{name}_input_mapping',
+    )(X)
+    X = activation_func(name=f'{name}_input_activation')(X)
+    X_skip = [X]
     # ----- #
-    
-    X = ResUNET_a_block(X, filter_num[0], kernel_size=3, dilation_num=dilation_[0], 
-                        activation=activation, batch_norm=batch_norm, name='{}_res0'.format(name)) 
+
+    X = ResUNET_a_block(
+        X,
+        filter_num[0],
+        kernel_size=3,
+        dilation_num=dilation_[0],
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_res0',
+    )
     X_skip.append(X)
 
     for i, f in enumerate(filter_num[1:]):
         ind_ = i+1
-        
-        X = encode_layer(X, f, pool_size, pool, activation=activation, 
-                         batch_norm=batch_norm, name='{}_down{}'.format(name, i))
-        X = ResUNET_a_block(X, f, kernel_size=3, dilation_num=dilation_[ind_], activation=activation, 
-                            batch_norm=batch_norm, name='{}_resblock_{}'.format(name, ind_))
+
+        X = encode_layer(
+            X,
+            f,
+            pool_size,
+            pool,
+            activation=activation,
+            batch_norm=batch_norm,
+            name=f'{name}_down{i}',
+        )
+        X = ResUNET_a_block(
+            X,
+            f,
+            kernel_size=3,
+            dilation_num=dilation_[ind_],
+            activation=activation,
+            batch_norm=batch_norm,
+            name=f'{name}_resblock_{ind_}',
+        )
         X_skip.append(X)
 
-    X = ASPP_conv(X, aspp_num_down, activation=activation, batch_norm=batch_norm, name='{}_aspp_bottom'.format(name))
+    X = ASPP_conv(
+        X,
+        aspp_num_down,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_aspp_bottom',
+    )
 
     X_skip = X_skip[:-1][::-1]
     dilation_ = dilation_[:-1][::-1]
-    
+
     for i, f in enumerate(filter_num[:-1][::-1]):
 
-        X = ResUNET_a_right(X, [X_skip[i],], f, kernel_size=3, activation=activation, dilation_num=dilation_[i], 
-                            unpool=unpool, batch_norm=batch_norm, name='{}_up{}'.format(name, i))
+        X = ResUNET_a_right(
+            X,
+            [
+                X_skip[i],
+            ],
+            f,
+            kernel_size=3,
+            activation=activation,
+            dilation_num=dilation_[i],
+            unpool=unpool,
+            batch_norm=batch_norm,
+            name=f'{name}_up{i}',
+        )
 
-    X = concatenate([X_skip[-1], X], name='{}_concat_out'.format(name))
+    X = concatenate([X_skip[-1], X], name=f'{name}_concat_out')
 
-    X = ASPP_conv(X, aspp_num_up, activation=activation, batch_norm=batch_norm, name='{}_aspp_out'.format(name))
-    
+    X = ASPP_conv(
+        X,
+        aspp_num_up,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_aspp_out',
+    )
+
     return X
 
 
@@ -243,46 +308,50 @@ def resunet_a_2d(input_size, filter_num, dilation_num, n_labels,
     
     activation_func = eval(activation)
     depth_ = len(filter_num)
-    
+
     X_skip = []
-    
+
     # input_size cannot have None
     if input_size[0] is None or input_size[1] is None:
         raise ValueError('`resunet_a_2d` does not support NoneType input shape')
-        
+
     # ----- #
     if isinstance(dilation_num[0], int):
-        print("Received dilation rates: {}".format(dilation_num))
-    
+        print(f"Received dilation rates: {dilation_num}")
+
         deep_ = (depth_-2)//2
         dilation_ = [[] for _ in range(depth_)]
-        
+
         print("Received dilation rates are not defined on a per downsampling level basis.")
         print("Automated determinations are applied with the following details:")
-        
+
         for i in range(depth_):
             if i <= 1:
                 dilation_[i] += dilation_num
-            elif i > 1 and i <= deep_+1:
+            elif i <= deep_ + 1:
                 dilation_[i] += dilation_num[:-1]
             else:
                 dilation_[i] += [1,]
-            print('\tdepth-{}, dilation_rate = {}'.format(i, dilation_[i]))
-            
+            print(f'\tdepth-{i}, dilation_rate = {dilation_[i]}')
+
     else:
         dilation_ = dilation_num
     # ----- #
-    
+
     IN = Input(input_size)
-    
+
     # base
     X = resunet_a_2d_base(IN, filter_num, dilation_,
                           aspp_num_down=aspp_num_down, aspp_num_up=aspp_num_up, activation=activation,
                           batch_norm=batch_norm, pool=pool, unpool=unpool, name=name)
-    
-    OUT = CONV_output(X, n_labels, kernel_size=1, activation=output_activation, name='{}_output'.format(name))
 
-    model = Model([IN], [OUT,], name='{}_model'.format(name))
-    
-    return model
+    OUT = CONV_output(
+        X,
+        n_labels,
+        kernel_size=1,
+        activation=output_activation,
+        name=f'{name}_output',
+    )
+
+    return Model([IN], [OUT,], name=f'{name}_model')
 
