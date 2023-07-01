@@ -23,7 +23,7 @@ def _crps_tf(y_true, y_pred, factor=0.05):
     return mae - factor*dist
 
 def crps2d_tf(y_true, y_pred, factor=0.05):
-    
+
     '''
     (Experimental)
     An approximated continuous ranked probability score (CRPS) loss function:
@@ -49,16 +49,16 @@ def crps2d_tf(y_true, y_pred, factor=0.05):
     
     y_pred = tf.convert_to_tensor(y_pred)
     y_true = tf.cast(y_true, y_pred.dtype)
-    
+
     y_pred = tf.squeeze(y_pred)
     y_true = tf.squeeze(y_true)
-    
+
     batch_num = y_pred.shape.as_list()[0]
-    
-    crps_out = 0
-    for i in range(batch_num):
-        crps_out += _crps_tf(y_true[i, ...], y_pred[i, ...], factor=factor)
-        
+
+    crps_out = sum(
+        _crps_tf(y_true[i, ...], y_pred[i, ...], factor=factor)
+        for i in range(batch_num)
+    )
     return crps_out/batch_num
 
 
@@ -75,7 +75,7 @@ def _crps_np(y_true, y_pred, factor=0.05):
     return mae - factor*dist
 
 def crps2d_np(y_true, y_pred, factor=0.05):
-    
+
     '''
     (Experimental)
     Nunpy version of `crps2d_tf`.
@@ -85,13 +85,13 @@ def crps2d_np(y_true, y_pred, factor=0.05):
     
     y_true = np.squeeze(y_true)
     y_pred = np.squeeze(y_pred)
-    
+
     batch_num = len(y_pred)
-    
-    crps_out = 0
-    for i in range(batch_num):
-        crps_out += _crps_np(y_true[i, ...], y_pred[i, ...], factor=factor)
-        
+
+    crps_out = sum(
+        _crps_np(y_true[i, ...], y_pred[i, ...], factor=factor)
+        for i in range(batch_num)
+    )
     return crps_out/batch_num
 
 # ========================= #
@@ -111,16 +111,13 @@ def dice_coef(y_true, y_pred, const=K.epsilon()):
     # flatten 2-d tensors
     y_true_pos = tf.reshape(y_true, [-1])
     y_pred_pos = tf.reshape(y_pred, [-1])
-    
+
     # get true pos (TP), false neg (FN), false pos (FP).
     true_pos  = tf.reduce_sum(y_true_pos * y_pred_pos)
     false_neg = tf.reduce_sum(y_true_pos * (1-y_pred_pos))
     false_pos = tf.reduce_sum((1-y_true_pos) * y_pred_pos)
-    
-    # 2TP/(2TP+FP+FN) == 2TP/()
-    coef_val = (2.0 * true_pos + const)/(2.0 * true_pos + false_pos + false_neg)
-    
-    return coef_val
+
+    return (2.0 * true_pos + const)/(2.0 * true_pos + false_pos + false_neg)
 
 def dice(y_true, y_pred, const=K.epsilon()):
     '''
@@ -136,14 +133,12 @@ def dice(y_true, y_pred, const=K.epsilon()):
     # tf tensor casting
     y_pred = tf.convert_to_tensor(y_pred)
     y_true = tf.cast(y_true, y_pred.dtype)
-    
+
     # <--- squeeze-out length-1 dimensions.
     y_pred = tf.squeeze(y_pred)
     y_true = tf.squeeze(y_true)
-    
-    loss_val = 1 - dice_coef(y_true, y_pred, const=const)
-    
-    return loss_val
+
+    return 1 - dice_coef(y_true, y_pred, const=const)
 
 # ========================= #
 # Tversky loss and variants
@@ -162,16 +157,15 @@ def tversky_coef(y_true, y_pred, alpha=0.5, const=K.epsilon()):
     # flatten 2-d tensors
     y_true_pos = tf.reshape(y_true, [-1])
     y_pred_pos = tf.reshape(y_pred, [-1])
-    
+
     # get true pos (TP), false neg (FN), false pos (FP).
     true_pos  = tf.reduce_sum(y_true_pos * y_pred_pos)
     false_neg = tf.reduce_sum(y_true_pos * (1-y_pred_pos))
     false_pos = tf.reduce_sum((1-y_true_pos) * y_pred_pos)
-    
-    # TP/(TP + a*FN + b*FP); a+b = 1
-    coef_val = (true_pos + const)/(true_pos + alpha*false_neg + (1-alpha)*false_pos + const)
-    
-    return coef_val
+
+    return (true_pos + const) / (
+        true_pos + alpha * false_neg + (1 - alpha) * false_pos + const
+    )
 
 def tversky(y_true, y_pred, alpha=0.5, const=K.epsilon()):
     '''
@@ -193,17 +187,15 @@ def tversky(y_true, y_pred, alpha=0.5, const=K.epsilon()):
     # tf tensor casting
     y_pred = tf.convert_to_tensor(y_pred)
     y_true = tf.cast(y_true, y_pred.dtype)
-    
+
     # <--- squeeze-out length-1 dimensions.
     y_pred = tf.squeeze(y_pred)
     y_true = tf.squeeze(y_true)
-    
-    loss_val = 1 - tversky_coef(y_true, y_pred, alpha=alpha, const=const)
-    
-    return loss_val
+
+    return 1 - tversky_coef(y_true, y_pred, alpha=alpha, const=const)
 
 def focal_tversky(y_true, y_pred, alpha=0.5, gamma=4/3, const=K.epsilon()):
-    
+
     '''
     Focal Tversky Loss (FTL)
     
@@ -224,15 +216,14 @@ def focal_tversky(y_true, y_pred, alpha=0.5, gamma=4/3, const=K.epsilon()):
     # tf tensor casting
     y_pred = tf.convert_to_tensor(y_pred)
     y_true = tf.cast(y_true, y_pred.dtype)
-    
+
     # <--- squeeze-out length-1 dimensions.
     y_pred = tf.squeeze(y_pred)
     y_true = tf.squeeze(y_true)
-    
-    # (Tversky loss)**(1/gamma) 
-    loss_val = tf.math.pow((1-tversky_coef(y_true, y_pred, alpha=alpha, const=const)), 1/gamma)
-    
-    return loss_val
+
+    return tf.math.pow(
+        (1 - tversky_coef(y_true, y_pred, alpha=alpha, const=const)), 1 / gamma
+    )
 
 # ========================= #
 # MS-SSIM
@@ -270,7 +261,7 @@ def ms_ssim(y_true, y_pred, **kwargs):
 # ======================== #
 
 def iou_box_coef(y_true, y_pred, mode='giou', dtype=tf.float32):
-    
+
     """
     Inersection over Union (IoU) and generalized IoU coefficients for bounding boxes.
     
@@ -297,56 +288,50 @@ def iou_box_coef(y_true, y_pred, mode='giou', dtype=tf.float32):
     """
     
     zero = tf.convert_to_tensor(0.0, dtype)
-    
+
     # subtrack bounding box coords
     ymin_true, xmin_true, ymax_true, xmax_true = tf.unstack(y_true, 4, axis=-1)
     ymin_pred, xmin_pred, ymax_pred, xmax_pred = tf.unstack(y_pred, 4, axis=-1)
-    
+
     # true area
     w_true = tf.maximum(zero, xmax_true - xmin_true)
     h_true = tf.maximum(zero, ymax_true - ymin_true)
     area_true = w_true * h_true
-    
+
     # pred area
     w_pred = tf.maximum(zero, xmax_pred - xmin_pred)
     h_pred = tf.maximum(zero, ymax_pred - ymin_pred)
     area_pred = w_pred * h_pred
-    
+
     # intersections
     intersect_ymin = tf.maximum(ymin_true, ymin_pred)
     intersect_xmin = tf.maximum(xmin_true, xmin_pred)
     intersect_ymax = tf.minimum(ymax_true, ymax_pred)
     intersect_xmax = tf.minimum(xmax_true, xmax_pred)
-    
+
     w_intersect = tf.maximum(zero, intersect_xmax - intersect_xmin)
     h_intersect = tf.maximum(zero, intersect_ymax - intersect_ymin)
     area_intersect = w_intersect * h_intersect
-    
+
     # IoU
     area_union = area_true + area_pred - area_intersect
     iou = tf.math.divide_no_nan(area_intersect, area_union)
-    
-    if mode == "iou":
-        
-        return iou
-    
-    else:
-        
-        # encolsed coords
-        enclose_ymin = tf.minimum(ymin_true, ymin_pred)
-        enclose_xmin = tf.minimum(xmin_true, xmin_pred)
-        enclose_ymax = tf.maximum(ymax_true, ymax_pred)
-        enclose_xmax = tf.maximum(xmax_true, xmax_pred)
-        
-        # enclosed area
-        w_enclose = tf.maximum(zero, enclose_xmax - enclose_xmin)
-        h_enclose = tf.maximum(zero, enclose_ymax - enclose_ymin)
-        area_enclose = w_enclose * h_enclose
-        
-        # generalized IoU
-        giou = iou - tf.math.divide_no_nan((area_enclose - area_union), area_enclose)
 
-        return giou
+    if mode == "iou":
+        return iou
+
+    # encolsed coords
+    enclose_ymin = tf.minimum(ymin_true, ymin_pred)
+    enclose_xmin = tf.minimum(xmin_true, xmin_pred)
+    enclose_ymax = tf.maximum(ymax_true, ymax_pred)
+    enclose_xmax = tf.maximum(xmax_true, xmax_pred)
+
+    # enclosed area
+    w_enclose = tf.maximum(zero, enclose_xmax - enclose_xmin)
+    h_enclose = tf.maximum(zero, enclose_ymax - enclose_ymin)
+    area_enclose = w_enclose * h_enclose
+
+    return iou - tf.math.divide_no_nan((area_enclose - area_union), area_enclose)
 
 def iou_box(y_true, y_pred, mode='giou', dtype=tf.float32):
     """

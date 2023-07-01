@@ -35,20 +35,34 @@ def UNET_left(X, channel, kernel_size=3, stack_num=2, activation='ReLU',
         
     '''
     pool_size = 2
-    
-    X = encode_layer(X, channel, pool_size, pool, activation=activation, 
-                     batch_norm=batch_norm, name='{}_encode'.format(name))
 
-    X = CONV_stack(X, channel, kernel_size, stack_num=stack_num, activation=activation, 
-                   batch_norm=batch_norm, name='{}_conv'.format(name))
-    
+    X = encode_layer(
+        X,
+        channel,
+        pool_size,
+        pool,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_encode',
+    )
+
+    X = CONV_stack(
+        X,
+        channel,
+        kernel_size,
+        stack_num=stack_num,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_conv',
+    )
+
     return X
 
 
 def UNET_right(X, X_list, channel, kernel_size=3, 
                stack_num=2, activation='ReLU',
                unpool=True, batch_norm=False, concat=True, name='right0'):
-    
+
     '''
     The decoder block of U-net.
     
@@ -74,27 +88,48 @@ def UNET_right(X, X_list, channel, kernel_size=3,
     '''
     
     pool_size = 2
-    
-    X = decode_layer(X, channel, pool_size, unpool, 
-                     activation=activation, batch_norm=batch_norm, name='{}_decode'.format(name))
-    
+
+    X = decode_layer(
+        X,
+        channel,
+        pool_size,
+        unpool,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_decode',
+    )
+
     # linear convolutional layers before concatenation
-    X = CONV_stack(X, channel, kernel_size, stack_num=1, activation=activation, 
-                   batch_norm=batch_norm, name='{}_conv_before_concat'.format(name))
+    X = CONV_stack(
+        X,
+        channel,
+        kernel_size,
+        stack_num=1,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_conv_before_concat',
+    )
     if concat:
         # <--- *stacked convolutional can be applied here
-        X = concatenate([X,]+X_list, axis=3, name=name+'_concat')
-    
-    # Stacked convolutions after concatenation 
-    X = CONV_stack(X, channel, kernel_size, stack_num=stack_num, activation=activation, 
-                   batch_norm=batch_norm, name=name+'_conv_after_concat')
-    
+        X = concatenate([X,]+X_list, axis=3, name=f'{name}_concat')
+
+    # Stacked convolutions after concatenation
+    X = CONV_stack(
+        X,
+        channel,
+        kernel_size,
+        stack_num=stack_num,
+        activation=activation,
+        batch_norm=batch_norm,
+        name=f'{name}_conv_after_concat',
+    )
+
     return X
 
 def unet_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2, 
                  activation='ReLU', batch_norm=False, pool=True, unpool=True, 
                  backbone=None, weights='imagenet', freeze_backbone=True, freeze_batch_norm=True, name='unet'):
-    
+
     '''
     The base of U-net with an optional ImageNet-trained backbone.
     
@@ -155,17 +190,29 @@ def unet_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2,
         X = input_tensor
 
         # stacked conv2d before downsampling
-        X = CONV_stack(X, filter_num[0], stack_num=stack_num_down, activation=activation, 
-                       batch_norm=batch_norm, name='{}_down0'.format(name))
+        X = CONV_stack(
+            X,
+            filter_num[0],
+            stack_num=stack_num_down,
+            activation=activation,
+            batch_norm=batch_norm,
+            name=f'{name}_down0',
+        )
         X_skip.append(X)
 
         # downsampling blocks
         for i, f in enumerate(filter_num[1:]):
-            X = UNET_left(X, f, stack_num=stack_num_down, activation=activation, pool=pool, 
-                          batch_norm=batch_norm, name='{}_down{}'.format(name, i+1))        
+            X = UNET_left(
+                X,
+                f,
+                stack_num=stack_num_down,
+                activation=activation,
+                pool=pool,
+                batch_norm=batch_norm,
+                name=f'{name}_down{i + 1}',
+            )
             X_skip.append(X)
 
-    # backbone cases
     else:
         # handling VGG16 and VGG19 separately
         if 'VGG' in backbone:
@@ -173,7 +220,7 @@ def unet_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2,
             # collecting backbone feature maps
             X_skip = backbone_([input_tensor,])
             depth_encode = len(X_skip)
-            
+
         # for other backbones
         else:
             backbone_ = backbone_zoo(backbone, weights, input_tensor, depth_-1, freeze_backbone, freeze_batch_norm)
@@ -193,8 +240,15 @@ def unet_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2,
             for i in range(depth_-depth_encode):
                 i_real = i + depth_encode
 
-                X = UNET_left(X, filter_num[i_real], stack_num=stack_num_down, activation=activation, pool=pool, 
-                              batch_norm=batch_norm, name='{}_down{}'.format(name, i_real+1))
+                X = UNET_left(
+                    X,
+                    filter_num[i_real],
+                    stack_num=stack_num_down,
+                    activation=activation,
+                    pool=pool,
+                    batch_norm=batch_norm,
+                    name=f'{name}_down{i_real + 1}',
+                )
                 X_skip.append(X)
 
     # reverse indexing encoded feature maps
@@ -210,16 +264,35 @@ def unet_2d_base(input_tensor, filter_num, stack_num_down=2, stack_num_up=2,
 
     # upsampling with concatenation
     for i in range(depth_decode):
-        X = UNET_right(X, [X_decode[i],], filter_num_decode[i], stack_num=stack_num_up, activation=activation, 
-                       unpool=unpool, batch_norm=batch_norm, name='{}_up{}'.format(name, i))
+        X = UNET_right(
+            X,
+            [
+                X_decode[i],
+            ],
+            filter_num_decode[i],
+            stack_num=stack_num_up,
+            activation=activation,
+            unpool=unpool,
+            batch_norm=batch_norm,
+            name=f'{name}_up{i}',
+        )
 
     # if tensors for concatenation is not enough
-    # then use upsampling without concatenation 
+    # then use upsampling without concatenation
     if depth_decode < depth_-1:
         for i in range(depth_-depth_decode-1):
             i_real = i + depth_decode
-            X = UNET_right(X, None, filter_num_decode[i_real], stack_num=stack_num_up, activation=activation, 
-                       unpool=unpool, batch_norm=batch_norm, concat=False, name='{}_up{}'.format(name, i_real))   
+            X = UNET_right(
+                X,
+                None,
+                filter_num_decode[i_real],
+                stack_num=stack_num_up,
+                activation=activation,
+                unpool=unpool,
+                batch_norm=batch_norm,
+                concat=False,
+                name=f'{name}_up{i_real}',
+            )
     return X
 
 def unet_2d(input_size, filter_num, n_labels, stack_num_down=2, stack_num_up=2,
@@ -278,22 +351,25 @@ def unet_2d(input_size, filter_num, n_labels, stack_num_down=2, stack_num_up=2,
     
     '''
     activation_func = eval(activation)
-    
+
     if backbone is not None:
         bach_norm_checker(backbone, batch_norm)
-        
+
     IN = Input(input_size)
-    
+
     # base    
     X = unet_2d_base(IN, filter_num, stack_num_down=stack_num_down, stack_num_up=stack_num_up, 
                      activation=activation, batch_norm=batch_norm, pool=pool, unpool=unpool, 
                      backbone=backbone, weights=weights, freeze_backbone=freeze_backbone, 
                      freeze_batch_norm=freeze_backbone, name=name)
-    
+
     # output layer
-    OUT = CONV_output(X, n_labels, kernel_size=1, activation=output_activation, name='{}_output'.format(name))
-    
-    # functional API model
-    model = Model(inputs=[IN,], outputs=[OUT,], name='{}_model'.format(name))
-    
-    return model
+    OUT = CONV_output(
+        X,
+        n_labels,
+        kernel_size=1,
+        activation=output_activation,
+        name=f'{name}_output',
+    )
+
+    return Model(inputs=[IN,], outputs=[OUT,], name=f'{name}_model')

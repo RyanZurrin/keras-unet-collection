@@ -31,17 +31,13 @@ layer_cadidates = {
 
 def bach_norm_checker(backbone_name, batch_norm):
     '''batch norm checker'''
-    if 'VGG' in backbone_name:
-        batch_norm_backbone = False
-    else:
-        batch_norm_backbone = True
-        
-    if batch_norm_backbone != batch_norm:       
+    batch_norm_backbone = 'VGG' not in backbone_name
+    if batch_norm_backbone != batch_norm:   
         if batch_norm_backbone:    
-            param_mismatch = "\n\nBackbone {} uses batch norm, but other layers received batch_norm={}".format(backbone_name, batch_norm)
+            param_mismatch = f"\n\nBackbone {backbone_name} uses batch norm, but other layers received batch_norm={batch_norm}"
         else:
-            param_mismatch = "\n\nBackbone {} does not use batch norm, but other layers received batch_norm={}".format(backbone_name, batch_norm)
-            
+            param_mismatch = f"\n\nBackbone {backbone_name} does not use batch norm, but other layers received batch_norm={batch_norm}"
+
         warnings.warn(param_mismatch);
         
 def backbone_zoo(backbone_name, weights, input_tensor, depth, freeze_backbone, freeze_batch_norm):
@@ -74,25 +70,26 @@ def backbone_zoo(backbone_name, weights, input_tensor, depth, freeze_backbone, f
     '''
     
     cadidate = layer_cadidates[backbone_name]
-    
+
     # ----- #
     # depth checking
     depth_max = len(cadidate)
-    if depth > depth_max:
-        depth = depth_max
+    depth = min(depth, depth_max)
     # ----- #
-    
+
     backbone_func = eval(backbone_name)
     backbone_ = backbone_func(include_top=False, weights=weights, input_tensor=input_tensor, pooling=None,)
-    
-    X_skip = []
-    
-    for i in range(depth):
-        X_skip.append(backbone_.get_layer(cadidate[i]).output)
-        
-    model = Model(inputs=[input_tensor,], outputs=X_skip, name='{}_backbone'.format(backbone_name))
-    
+
+    X_skip = [backbone_.get_layer(cadidate[i]).output for i in range(depth)]
+    model = Model(
+        inputs=[
+            input_tensor,
+        ],
+        outputs=X_skip,
+        name=f'{backbone_name}_backbone',
+    )
+
     if freeze_backbone:
         model = freeze_model(model, freeze_batch_norm=freeze_batch_norm)
-    
+
     return model
